@@ -10,6 +10,7 @@ version = "0.1.0"
 certs = "openssl req -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem -days 365 -nodes -subj \"/C=US/ST=State/L=City/O=Organization/CN=localhost\""
 serve-https = "uvicorn server:app --host 0.0.0.0 --port 8000 --ssl-keyfile=key.pem --ssl-certfile=cert.pem"
 serve = { depends-on = ["certs", "serve-https"] }
+serve-http = "uvicorn server:app --host 0.0.0.0 --port 8000"
 
 [dependencies]
 python = ">=3.12.5,<4"

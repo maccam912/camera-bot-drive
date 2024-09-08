@@ -9,4 +9,4 @@ COPY pixi.lock .
 COPY html/ ./html/
 COPY server.py .
 EXPOSE 8000
-CMD /root/.pixi/bin/pixi run serve
+CMD /root/.pixi/bin/pixi run serve-http
