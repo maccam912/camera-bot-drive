@@ -7,7 +7,7 @@ platforms = ["win-64", "linux-64"]
 version = "0.1.0"
 
 [tasks]
-serve = "uvicorn server:app"
+serve = "uvicorn server:app --host 0.0.0.0 --port 8000"
 
 [dependencies]
 python = ">=3.12.5,<4"
