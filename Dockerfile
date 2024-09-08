@@ -6,7 +6,7 @@ WORKDIR /app
 RUN curl -fsSL https://pixi.sh/install.sh | bash
 COPY pixi.toml .
 COPY pixi.lock .
-COPY html .
+COPY html/ ./html/
 COPY server.py .
 EXPOSE 8000
 CMD /root/.pixi/bin/pixi run serve

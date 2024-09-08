@@ -9,6 +9,11 @@
 <h2>OpenCV.js Webcam Processing</h2>
 <p id="status">OpenCV.js is loading...</p>
 <div>
+  <select id="cameraSelect">
+    <option value="">Select a camera</option>
+  </select>
+</div>
+<div>
   <div class="inputoutput">
     <video id="videoInput" width="320" height="240"></video>
     <div class="caption">Video Input</div>
@@ -21,6 +26,7 @@
 <div id="control-status"></div>
 <script type="text/javascript">
 let video = document.getElementById('videoInput');
+let cameraSelect = document.getElementById('cameraSelect');
 let src, cap, dst;
 
 function processVideo() {
@@ -97,17 +103,45 @@ function onOpenCvReady() {
     document.getElementById('status').innerHTML = 'OpenCV.js is ready.';
     
     cap = new cv.VideoCapture(video);
-    navigator.mediaDevices.getUserMedia({ video: true, audio: false })
-        .then(function(stream) {
-            video.srcObject = stream;
-            video.play();
-            video.onloadedmetadata = function() {
-                prepareVariables();
-            };
+    
+    // Populate camera select dropdown
+    navigator.mediaDevices.enumerateDevices()
+        .then(function(devices) {
+            devices.forEach(function(device) {
+                if (device.kind === 'videoinput') {
+                    let option = document.createElement('option');
+                    option.value = device.deviceId;
+                    option.text = device.label || `Camera ${cameraSelect.length}`;
+                    cameraSelect.appendChild(option);
+                }
+            });
         })
         .catch(function(err) {
             console.log("An error occurred: " + err);
         });
+
+    cameraSelect.onchange = function() {
+        if (video.srcObject) {
+            video.srcObject.getTracks().forEach(track => track.stop());
+        }
+        
+        if (cameraSelect.value) {
+            navigator.mediaDevices.getUserMedia({ 
+                video: { deviceId: { exact: cameraSelect.value } },
+                audio: false 
+            })
+            .then(function(stream) {
+                video.srcObject = stream;
+                video.play();
+                video.onloadedmetadata = function() {
+                    prepareVariables();
+                };
+            })
+            .catch(function(err) {
+                console.log("An error occurred: " + err);
+            });
+        }
+    };
 }
 
 // Load OpenCV.js
