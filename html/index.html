@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>OpenCV.js Webcam Processing</title>
+<script src="https://unpkg.com/htmx.org@1.9.10"></script>
+</head>
+<body>
+<h2>OpenCV.js Webcam Processing</h2>
+<p id="status">OpenCV.js is loading...</p>
+<div>
+  <div class="inputoutput">
+    <video id="videoInput" width="320" height="240"></video>
+    <div class="caption">Video Input</div>
+  </div>
+  <div class="inputoutput">
+    <canvas id="canvasOutput" width="320" height="240"></canvas>
+    <div class="caption">Processed Output</div>
+  </div>
+</div>
+<div id="control-status"></div>
+<script type="text/javascript">
+let video = document.getElementById('videoInput');
+let src, cap, dst;
+
+function processVideo() {
+    try {
+        if (!video.paused && !video.ended) {
+            cap.read(src);
+            
+            // Convert to HSV color space
+            cv.cvtColor(src, dst, cv.COLOR_RGBA2RGB);
+            cv.cvtColor(dst, dst, cv.COLOR_RGB2HSV);
+            
+            // Define range for blue color in HSV
+            let lowBlue = new cv.Mat(dst.rows, dst.cols, dst.type(), [100, 100, 100, 0]);
+            let highBlue = new cv.Mat(dst.rows, dst.cols, dst.type(), [140, 255, 255, 255]);
+            
+            // Threshold the image
+            let maskBlue = new cv.Mat();
+            cv.inRange(dst, lowBlue, highBlue, maskBlue);
+            
+            // Find contours
+            let contoursBlue = new cv.MatVector();
+            let hierarchy = new cv.Mat();
+            cv.findContours(maskBlue, contoursBlue, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+            
+            // Process contours
+            let maxArea = 0;
+            let maxContourIndex = -1;
+            for (let i = 0; i < contoursBlue.size(); ++i) {
+                let area = cv.contourArea(contoursBlue.get(i));
+                if (area > maxArea) {
+                    maxArea = area;
+                    maxContourIndex = i;
+                }
+            }
+            
+            let direction = 'stop';  // Default direction
+            if (maxContourIndex !== -1) {
+                let moments = cv.moments(contoursBlue.get(maxContourIndex));
+                let cx = moments.m10 / moments.m00;
+                let cy = moments.m01 / moments.m00;
+                
+                console.log(`Blue centroid coordinates: (${cx.toFixed(2)}, ${cy.toFixed(2)})`);
+                cv.circle(src, new cv.Point(cx, cy), 5, [0, 0, 255, 255], -1);
+                
+                // Determine direction based on blue dot position
+                direction = cy > src.rows / 2 ? 'forward' : 'backward';
+            }
+            
+            // Send direction to server
+            htmx.ajax('GET', `/control?direction=${direction}`, '#control-status');
+            
+            cv.imshow('canvasOutput', src);
+            
+            // Clean up
+            maskBlue.delete();
+            lowBlue.delete(); highBlue.delete();
+            contoursBlue.delete(); hierarchy.delete();
+
+            requestAnimationFrame(processVideo);
+        }
+    } catch (err) {
+        console.error(err);
+    }
+}
+
+function prepareVariables() {
+    src = new cv.Mat(video.height, video.width, cv.CV_8UC4);
+    dst = new cv.Mat(video.height, video.width, cv.CV_8UC3);
+
+    requestAnimationFrame(processVideo);
+}
+
+function onOpenCvReady() {
+    document.getElementById('status').innerHTML = 'OpenCV.js is ready.';
+    
+    cap = new cv.VideoCapture(video);
+    navigator.mediaDevices.getUserMedia({ video: true, audio: false })
+        .then(function(stream) {
+            video.srcObject = stream;
+            video.play();
+            video.onloadedmetadata = function() {
+                prepareVariables();
+            };
+        })
+        .catch(function(err) {
+            console.log("An error occurred: " + err);
+        });
+}
+
+// Load OpenCV.js
+var script = document.createElement('script');
+script.src = 'https://docs.opencv.org/4.5.0/opencv.js';
+script.onload = onOpenCvReady;
+document.body.appendChild(script);
+</script>
+</body>
+</html>

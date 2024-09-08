@@ -1,0 +1,15 @@
+[project]
+authors = ["Matt Koski <maccam912@gmail.com>"]
+channels = ["conda-forge"]
+description = "Add a short description here"
+name = "camera-bot-drive"
+platforms = ["win-64", "linux-64"]
+version = "0.1.0"
+
+[tasks]
+serve = "uvicorn server:app"
+
+[dependencies]
+python = ">=3.12.5,<4"
+litestar = ">=2.11.0,<3"
+uvicorn = ">=0.30.6,<0.31"
