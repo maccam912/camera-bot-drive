@@ -13,7 +13,7 @@
         <option value="webcam">Webcam</option>
         <option value="image">Image Upload</option>
     </select>
-    <select id="cameraSelect" style="display:none;">
+    <select id="cameraSelect">
         <option value="">Select a camera</option>
     </select>
     <input type="file" id="fileInput" name="file" accept="image/*" style="display:none;" />
@@ -37,6 +37,8 @@ let cameraSelect = document.getElementById('cameraSelect');
 let fileInput = document.getElementById('fileInput');
 let inputSelect = document.getElementById('inputSelect');
 let src, cap, dst;
+let animationId;
+let isProcessing = false;
 
 function processFrame() {
     try {
@@ -46,78 +48,113 @@ function processFrame() {
             src = cv.imread(imageInput);
         }
         
-        dst = new cv.Mat();
-        
-        // Convert to HSV color space
+        let dst = new cv.Mat();
         cv.cvtColor(src, dst, cv.COLOR_RGBA2RGB);
         cv.cvtColor(dst, dst, cv.COLOR_RGB2HSV);
         
-        // Define range for blue color in HSV
-        let lowBlue = new cv.Mat(dst.rows, dst.cols, dst.type(), [100, 100, 100, 0]);
-        let highBlue = new cv.Mat(dst.rows, dst.cols, dst.type(), [140, 255, 255, 255]);
-        
-        // Define range for vibrant red color in HSV (two ranges due to how red wraps around in HSV)
-        let lowRed1 = new cv.Mat(dst.rows, dst.cols, dst.type(), [0, 200, 200, 0]);
-        let highRed1 = new cv.Mat(dst.rows, dst.cols, dst.type(), [10, 255, 255, 255]);
-        let lowRed2 = new cv.Mat(dst.rows, dst.cols, dst.type(), [170, 200, 200, 0]);
-        let highRed2 = new cv.Mat(dst.rows, dst.cols, dst.type(), [180, 255, 255, 255]);
-        
-        // Threshold the images
-        let maskBlue = new cv.Mat();
-        let maskRed1 = new cv.Mat();
-        let maskRed2 = new cv.Mat();
-        let maskRed = new cv.Mat();
-        cv.inRange(dst, lowBlue, highBlue, maskBlue);
-        cv.inRange(dst, lowRed1, highRed1, maskRed1);
-        cv.inRange(dst, lowRed2, highRed2, maskRed2);
-        cv.add(maskRed1, maskRed2, maskRed);
-        
-        // Find contours for blue and red
-        let contoursBlue = new cv.MatVector();
-        let contoursRed = new cv.MatVector();
-        let hierarchy = new cv.Mat();
-        cv.findContours(maskBlue, contoursBlue, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
-        cv.findContours(maskRed, contoursRed, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
-        
-        // Process blue contour (existing code)
-        // ... existing blue contour processing ...
+        // Define color ranges
+        let colorRanges = {
+            purple: [[120, 30, 10], [160, 255, 255]], // Adjusted for darker shades
+            green: [[40, 50, 50], [80, 255, 255]], // Unchanged
+            yellow: [[20, 100, 100], [35, 255, 255]] // Adjusted for darker shades
+        };
 
-        // Process red contours
-        let redAreas = [];
-        for (let i = 0; i < contoursRed.size(); ++i) {
-            let area = cv.contourArea(contoursRed.get(i));
-            redAreas.push({index: i, area: area});
+        let masks = {};
+        let contours = {};
+
+        for (let color in colorRanges) {
+            let [low, high] = colorRanges[color];
+            masks[color] = new cv.Mat();
+            contours[color] = new cv.MatVector();
+            
+            // Create cv.Mat objects for lower and upper bounds
+            let lowMat = cv.matFromArray(1, 3, cv.CV_8UC1, low);
+            let highMat = cv.matFromArray(1, 3, cv.CV_8UC1, high);
+            
+            cv.inRange(dst, lowMat, highMat, masks[color]);
+            
+            cv.findContours(masks[color], contours[color], new cv.Mat(), cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+            
+            // Clean up the temporary Mat objects
+            lowMat.delete();
+            highMat.delete();
         }
-        redAreas.sort((a, b) => b.area - a.area);
+
+        // Process purple contour
+        if (contours.purple.size() > 0) {
+            let moments = cv.moments(contours.purple.get(0));
+            let cx = moments.m10 / moments.m00;
+            let cy = moments.m01 / moments.m00;
+            console.log(`Purple centroid: (${cx.toFixed(2)}, ${cy.toFixed(2)})`);
+            cv.circle(src, new cv.Point(cx, cy), 5, [128, 0, 128, 255], -1);
+        }
+
+        // Process green contour
+        if (contours.green.size() > 0) {
+            let maxArea = 0;
+            let maxAreaIndex = -1;
+            for (let i = 0; i < contours.green.size(); i++) {
+                let area = cv.contourArea(contours.green.get(i));
+                if (area > maxArea) {
+                    maxArea = area;
+                    maxAreaIndex = i;
+                }
+            }
+            
+            if (maxAreaIndex !== -1) {
+                let moments = cv.moments(contours.green.get(maxAreaIndex));
+                if (moments.m00 !== 0) {
+                    let cx = moments.m10 / moments.m00;
+                    let cy = moments.m01 / moments.m00;
+                    console.log(`Green centroid: (${cx.toFixed(2)}, ${cy.toFixed(2)})`);
+                    cv.circle(src, new cv.Point(cx, cy), 5, [0, 255, 0, 255], -1);
+                }
+            }
+        }
+
+        // Process yellow contours
+        let yellowAreas = [];
+        for (let i = 0; i < contours.yellow.size(); ++i) {
+            let area = cv.contourArea(contours.yellow.get(i));
+            yellowAreas.push({index: i, area: area});
+        }
+        yellowAreas.sort((a, b) => b.area - a.area);
         
-        // Get the four largest red regions
-        for (let i = 0; i < Math.min(4, redAreas.length); i++) {
-            let contour = contoursRed.get(redAreas[i].index);
+        // Get the four largest yellow regions
+        for (let i = 0; i < Math.min(4, yellowAreas.length); i++) {
+            let contour = contours.yellow.get(yellowAreas[i].index);
             let moments = cv.moments(contour);
             let cx = moments.m10 / moments.m00;
             let cy = moments.m01 / moments.m00;
             
-            console.log(`Red centroid ${i+1} coordinates: (${cx.toFixed(2)}, ${cy.toFixed(2)})`);
-            cv.circle(src, new cv.Point(cx, cy), 5, [0, 255, 0, 255], -1);
+            console.log(`Yellow point ${i+1}: (${cx.toFixed(2)}, ${cy.toFixed(2)})`);
+            cv.circle(src, new cv.Point(cx, cy), 5, [255, 255, 0, 255], -1);
         }
-        
-        // Send direction to server
-        // htmx.ajax('GET', `/control?direction=${direction}`, '#control-status');
         
         cv.imshow('canvasOutput', src);
         
         // Clean up
         dst.delete();
-        maskBlue.delete(); maskRed.delete(); maskRed1.delete(); maskRed2.delete();
-        lowBlue.delete(); highBlue.delete();
-        lowRed1.delete(); highRed1.delete(); lowRed2.delete(); highRed2.delete();
-        contoursBlue.delete(); contoursRed.delete(); hierarchy.delete();
-
-        if (inputSelect.value === 'webcam') {
-            requestAnimationFrame(processFrame);
+        for (let color in masks) {
+            masks[color].delete();
+            contours[color].delete();
         }
     } catch (err) {
         console.error(err);
+    }
+}
+
+function animationLoop() {
+    isProcessing = true;
+    while (isProcessing && inputSelect.value === 'webcam') {
+        processFrame();
+        // Use setTimeout to yield to the browser and prevent blocking
+        setTimeout(() => {
+            if (isProcessing) {
+                requestAnimationFrame(animationLoop);
+            }
+        }, 0);
+        return; // Exit the loop after each frame
     }
 }
 
@@ -137,7 +174,8 @@ function startWebcam() {
             video.onloadedmetadata = function() {
                 src = new cv.Mat(video.height, video.width, cv.CV_8UC4);
                 cap = new cv.VideoCapture(video);
-                requestAnimationFrame(processFrame);
+                isProcessing = false; // Ensure any existing loop is stopped
+                animationLoop();
             };
         })
         .catch(function(err) {
@@ -196,8 +234,12 @@ function onOpenCvReady() {
             if (video.srcObject) {
                 video.srcObject.getTracks().forEach(track => track.stop());
             }
+            isProcessing = false; // Stop the animation loop
         }
     };
+
+    // Initialize the input selection
+    inputSelect.dispatchEvent(new Event('change'));
 }
 
 // Load OpenCV.js
